@@ -10,3 +10,4 @@ include_directories(
 )
 
 add_subdirectory(depixelize)
+add_subdirectory(render)

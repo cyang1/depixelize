@@ -1,12 +1,16 @@
 #include <cstdlib>
+#include <cstdint>
 #include <getopt.h>
 #include <iostream>
 #include <vector>
 
+#include <boost/filesystem/path.hpp>
 #include <boost/polygon/voronoi.hpp>
 #include <opencv2/opencv.hpp>
 
 #include "pixel_grid.hpp"
+#include "spline_optimizer.hpp"
+#include "render/svg_renderer.hpp"
 
 using namespace Depixelize;
 
@@ -30,7 +34,7 @@ static void print_usage(const char* progname)
 {
     printf("Usage: %s [options] input_filename\n", progname);
     printf("Program Options:\n");
-    printf("  -o  --output <FILENAME>    Puts the resulting image into <FILENAME> (required) \n");
+    printf("  -o  --output <FILENAME>    Puts the resulting image into <FILENAME> (default: [input_filename]_out)\n");
     printf("  -s  --scale  <INT>         Scale the original image by this factor (default: 4)\n");
     printf("  -h  --help                 This message\n");
 }
@@ -74,12 +78,6 @@ static bool parse_args(Options* options, int argc, char* argv[])
     }
     // end parsing of commandline options //////////////////////////////////////
 
-    if (options->output_filename == NULL) {
-        fprintf(stderr, "Error: missing output filename\n");
-        print_usage(argv[0]);
-        return false;
-    }
-
     if (optind + 1 > argc) {
         fprintf(stderr, "Error: missing input filename\n");
         print_usage(argv[0]);
@@ -87,6 +85,13 @@ static bool parse_args(Options* options, int argc, char* argv[])
     }
 
     options->input_filename = argv[optind];
+
+    if (options->output_filename == NULL) {
+        boost::filesystem::path filename = boost::filesystem::path(options->input_filename).stem();
+        filename += "_out";
+        options->output_filename = filename.c_str();
+    }
+
     return true;
 }
 
@@ -106,24 +111,31 @@ int main(int argc, char* argv[])
 
     std::vector< boost::polygon::point_data<int> > points;
     std::vector< boost::polygon::segment_data<int> > edges;
-    pg.get_data(points, edges);
+    std::vector<cv::Vec3b> colors;
+    std::vector<uint32_t> components;
+    uint32_t num_components = pg.get_data(&points, &edges, &colors, &components);
 
-    std::cout << points.size() << std::endl;
-    for (auto it = points.begin(); it != points.end(); ++it) {
-        std::cout << it->y() << " " << it->x() << std::endl;
-    }
+    // std::cout << points.size() << std::endl;
+    // for (auto it = points.begin(); it != points.end(); ++it) {
+    //     std::cout << it->y() << " " << it->x() << std::endl;
+    // }
 
-    std::cout << edges.size() << std::endl;
-    for (auto it = edges.begin(); it != edges.end(); ++it) {
-        std::cout << it->low().y() << " " << it->low().x() << " " << it->high().y() << " " << it->high().x() << std::endl;
-    }
+    // std::cout << edges.size() << std::endl;
+    // for (auto it = edges.begin(); it != edges.end(); ++it) {
+    //     std::cout << it->low().y() << " " << it->low().x() << " " << it->high().y() << " " << it->high().x() << std::endl;
+    // }
 
     boost::polygon::voronoi_diagram<double> vd;
     construct_voronoi(points.begin(), points.end(), edges.begin(), edges.end(), &vd);
 
-    cv::namedWindow("Display Image", CV_WINDOW_AUTOSIZE);
-    cv::imshow("Display Image", img);
-    cv::waitKey(0);
+    SplineOptimizer sp_opt(vd, points, edges, components, num_components, colors);
+    sp_opt.initialize();
+    sp_opt.optimize_splines();
+    std::vector<Shape> shapes = sp_opt.make_shapes();
+
+    // pg.get_data above doubles the coordinate locations so that they stay integers
+    SVGRenderer svg_renderer(img.cols * 2, img.rows * 2, opt.output_scale / 2.0);
+    svg_renderer.render(svg_renderer.make_full_filename(opt.output_filename), shapes);
 
     return 0;
 }

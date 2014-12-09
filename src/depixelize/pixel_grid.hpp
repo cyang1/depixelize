@@ -1,6 +1,7 @@
 #ifndef DEPIXELIZE_PIXEL_GRID_HPP
 #define DEPIXELIZE_PIXEL_GRID_HPP
 
+#include <cstdint>
 #include <vector>
 
 #include <opencv2/opencv.hpp>
@@ -29,8 +30,10 @@ public:
 
     void make_planar();
 
-    void get_data(std::vector< boost::polygon::point_data<int> > &points,
-                  std::vector< boost::polygon::segment_data<int> > &edges);
+    int get_data(std::vector< boost::polygon::point_data<int> >* points,
+                 std::vector< boost::polygon::segment_data<int> >* edges,
+                 std::vector<cv::Vec3b>* colors,
+                 std::vector<uint32_t>* components);
 
 private:
 
@@ -43,13 +46,19 @@ private:
 
     inline bool in_bounds(boost::polygon::point_data<int> p, int rmin, int rmax, int cmin, int cmax);
 
+    inline void split_edge(boost::polygon::segment_data<int> e,
+                           boost::polygon::segment_data<int>* out_1,
+                           boost::polygon::segment_data<int>* out_2);
+
     inline boost::polygon::segment_data<int> reverse_edge(boost::polygon::segment_data<int> e);
 
     // edge_num must correspond to the number of the edge for the source point
     void remove_edge(boost::polygon::segment_data<int> e, int edge_num);
 
+    uint32_t get_components(uint32_t *components);
+
     cv::Mat img;
-    unsigned char *neighbors;
+    uint8_t *neighbors;
     NeighborEdgeList neighbor_edges;
 };
 

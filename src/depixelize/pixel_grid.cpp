@@ -28,7 +28,7 @@
 #define DIR_T  (1 << IDX_T)
 #define DIR_TR (1 << IDX_TR)
 
-#define DIR_TO_IDX(dir) (CHAR_BIT * sizeof(int) - __builtin_clz(dir) - 1)
+#define DIR_TO_IDX(dir) (CHAR_BIT * sizeof(uint8_t) - __builtin_clz(dir) - 1)
 #define IDX_TO_DIR(idx) (1 << idx)
 
 #define DIAGONALS_EXIST(tl, tr) (((tl) & DIR_BR) && ((tr) & DIR_BL))
@@ -49,12 +49,12 @@ namespace Depixelize {
  *   / | \
  *  3  2  1
  */
-int DIRECTIONS[NUM_DIRS][DIM] = { { 0, 1 }, { 1, 1 }, { 1, 0 }, { 1, -1 }, { 0, -1 }, { -1, -1 }, { -1, 0 }, { -1, 1 } };
+const int DIRECTIONS[NUM_DIRS][DIM] = { { 0, 1 }, { 1, 1 }, { 1, 0 }, { 1, -1 }, { 0, -1 }, { -1, -1 }, { -1, 0 }, { -1, 1 } };
 
 void PixelGrid::initialize(const cv::Mat img)
 {
     this->img = img;
-    this->neighbors = new unsigned char[img.rows * img.cols];
+    this->neighbors = new uint8_t[img.rows * img.cols];
     this->neighbor_edges = new boost::polygon::segment_data<int>[img.rows * img.cols][8];
 
     // Initialize the neighbors bitmasks
@@ -89,29 +89,28 @@ void PixelGrid::make_planar()
     const int ch = this->img.channels();
 
     for (int r = 0; r < this->img.rows; r++) {
-        unsigned char* row = this->img.ptr<unsigned char>(r);
+        uint8_t* row = this->img.ptr<uint8_t>(r);
         for (int c = 0; c < this->img.cols; c++) {
-            unsigned char cur_bitmask = this->neighbors[r * this->img.cols + c];
+            uint8_t cur_bitmask = this->neighbors[r * this->img.cols + c];
             auto cur_edges = this->neighbor_edges[r * this->img.cols + c];
 
             // Take advantage of symmetry by only going through forward edges
             for (int i = 0; i < NUM_FORWARD_DIRS; i++) {
                 if (cur_bitmask & IDX_TO_DIR(i)) {
-                    boost::polygon::segment_data<int> e = cur_edges[i];
-                    boost::polygon::point_data<int> other = e.high();
-                    if (dissimilar_colors(&row[ch * c], this->img.at<cv::Vec3b>(other.x(), other.y()).val)) {
-                        remove_edge(e, i);
+                    if (dissimilar_colors(&row[ch * c], this->img.at<cv::Vec3b>(r + DIRECTIONS[i][0], c + DIRECTIONS[i][1]).val)) {
+                        remove_edge(cur_edges[i], i);
                     }
                 }
             }
         }
     }
 
+    std::vector< std::pair<boost::polygon::segment_data<int>, uint8_t> > edges_to_remove;
     for (int r = 0; r < this->img.rows - 1; r++) {
         for (int c = 0; c < this->img.cols - 1; c++) {
-            unsigned char tl_bitmask = this->neighbors[r * this->img.cols + c];
-            unsigned char tr_bitmask = this->neighbors[r * this->img.cols + c + 1];
-            unsigned char bl_bitmask = this->neighbors[(r + 1) * this->img.cols + c];
+            uint8_t tl_bitmask = this->neighbors[r * this->img.cols + c];
+            uint8_t tr_bitmask = this->neighbors[r * this->img.cols + c + 1];
+            uint8_t bl_bitmask = this->neighbors[(r + 1) * this->img.cols + c];
 
             boost::polygon::segment_data<int> d1 = this->neighbor_edges[r * this->img.cols + c][IDX_BR];
             boost::polygon::segment_data<int> d2 = this->neighbor_edges[r * this->img.cols + c + 1][IDX_BL];
@@ -119,39 +118,88 @@ void PixelGrid::make_planar()
             // Both diagonals exist, need to resolve to make planar
             if (DIAGONALS_EXIST(tl_bitmask, tr_bitmask)) {
                 if (BOX_EXISTS(tl_bitmask, tr_bitmask, bl_bitmask)) {
-                    remove_edge(d1, IDX_BR);
-                    remove_edge(d2, IDX_BL);
+                    edges_to_remove.push_back({ d1, IDX_BR });
+                    edges_to_remove.push_back({ d2, IDX_BL });
                 } else {
                     int r1 = rate_diagonal(d1);
                     int r2 = rate_diagonal(d2);
-                    if (r1 <= r2) remove_edge(d1, IDX_BR);
-                    if (r2 <= r1) remove_edge(d2, IDX_BL);
+                    if (r1 <= r2) edges_to_remove.push_back({ d1, IDX_BR });
+                    if (r2 <= r1) edges_to_remove.push_back({ d2, IDX_BL });
                 }
             }
         }
+    }
+
+    // Remove these edges in a second pass because edge removal heuristics
+    // depend on the original graph
+    for (auto &p : edges_to_remove) {
+        remove_edge(p.first, p.second);
     }
 }
 
-void PixelGrid::get_data(std::vector< boost::polygon::point_data<int> > &points,
-                         std::vector< boost::polygon::segment_data<int> > &edges)
+int PixelGrid::get_data(std::vector< boost::polygon::point_data<int> >* points,
+                         std::vector< boost::polygon::segment_data<int> >* edges,
+                         std::vector<cv::Vec3b>* colors,
+                         std::vector<uint32_t>* components)
 {
-    points.clear();
-    edges.clear();
+    std::vector<cv::Vec3b> pt_colors;
+    std::vector<cv::Vec3b> edge_colors;
+    std::vector<uint64_t> pt_components;
+    std::vector<uint64_t> edge_components;
 
+    points->clear();
+    edges->clear();
+
+    uint32_t *img_components = new uint32_t[this->img.rows * this->img.cols];
+    uint32_t num_components = this->get_components(img_components);
+
+    // for (int r = 0; r < this->img.rows; r++) {
+    //     for (int c = 0; c < this->img.cols; c++) {
+    //         printf("%2d ", img_components[r * this->img.cols + c]);
+    //     }
+    //     std::cout << std::endl;
+    // }
+
+    // Yes, accessing colors one at a time is inefficient. Probably not much
+    // less efficient than constructing a cv::Vec3b each time though.
     for (int r = 0; r < this->img.rows; r++) {
         for (int c = 0; c < this->img.cols; c++) {
-            unsigned char cur_bitmask = this->neighbors[r * this->img.cols + c];
+            uint8_t cur_bitmask = this->neighbors[r * this->img.cols + c];
             if (cur_bitmask == 0) {
-                points.push_back(boost::polygon::point_data<int>(r, c));
+                points->push_back(boost::polygon::point_data<int>(2 * c, 2 * r));
+                pt_colors.push_back(this->img.at<cv::Vec3b>(c, r));
+                pt_components.push_back(img_components[r * this->img.cols + c]);
                 continue;
             }
+            auto cur_edges = this->neighbor_edges[r * this->img.cols + c];
             for (int i = 0; i < NUM_FORWARD_DIRS; i++) {
                 if (cur_bitmask & IDX_TO_DIR(i)) {
-                    edges.push_back(this->neighbor_edges[r * this->img.cols + c][i]);
+                    int next_r = r + DIRECTIONS[i][0];
+                    int next_c = c + DIRECTIONS[i][1];
+
+                    boost::polygon::segment_data<int> e = cur_edges[i];
+                    boost::polygon::point_data<int> p1(2 * e.low().y(), 2 * e.low().x()),
+                        p2(2 * e.high().y(), 2 * e.high().x());
+                    boost::polygon::segment_data<int> e1, e2;
+                    this->split_edge(boost::polygon::segment_data<int>(p1, p2), &e1, &e2);
+
+                    edges->push_back(e1);
+                    edges->push_back(e2);
+                    edge_colors.push_back(this->img.at<cv::Vec3b>(c, r));
+                    edge_colors.push_back(this->img.at<cv::Vec3b>(next_r, next_c));
+                    edge_components.push_back(img_components[r * this->img.cols + c]);
+                    edge_components.push_back(img_components[next_r * this->img.cols + next_c]);
                 }
             }
         }
     }
+
+    colors->insert(colors->end(), pt_colors.begin(), pt_colors.end());
+    colors->insert(colors->end(), edge_colors.begin(), edge_colors.end());
+    components->insert(components->end(), pt_components.begin(), pt_components.end());
+    components->insert(components->end(), edge_components.begin(), edge_components.end());
+
+    return num_components;
 }
 
 int PixelGrid::rate_diagonal(boost::polygon::segment_data<int> d)
@@ -178,7 +226,7 @@ int PixelGrid::curves_heuristic(boost::polygon::segment_data<int> d)
         int r = cur_pt.x();
         int c = cur_pt.y();
 
-        unsigned char bitmask = this->neighbors[r * w + c];
+        uint8_t bitmask = this->neighbors[r * w + c];
         auto edges = this->neighbor_edges[r * w + c];
         if (VALENCE(bitmask) != 2) {
             continue;
@@ -230,7 +278,7 @@ int PixelGrid::sparse_pixels_heuristic(boost::polygon::segment_data<int> d)
         int r = cur_pt.x();
         int c = cur_pt.y();
 
-        unsigned char bitmask = this->neighbors[r * w + c];
+        uint8_t bitmask = this->neighbors[r * w + c];
         auto edges = this->neighbor_edges[r * w + c];
         for (int i = 0; i < NUM_DIRS; i++) {
             if (bitmask & IDX_TO_DIR(i)) {
@@ -251,8 +299,8 @@ int PixelGrid::islands_heuristic(boost::polygon::segment_data<int> d)
 {
     const int w = this->img.cols;
 
-    unsigned char low_mask = this->neighbors[d.low().x() * w + d.low().y()];
-    unsigned char high_mask = this->neighbors[d.high().x() * w + d.high().y()];
+    uint8_t low_mask = this->neighbors[d.low().x() * w + d.low().y()];
+    uint8_t high_mask = this->neighbors[d.high().x() * w + d.high().y()];
 
     if (VALENCE(low_mask) == 1 || VALENCE(high_mask) == 1) {
         return 5;
@@ -267,19 +315,72 @@ inline bool PixelGrid::in_bounds(boost::polygon::point_data<int> p, int rmin, in
     return rmin <= r && r <= rmax && cmin <= c && c <= cmax;
 }
 
+inline void PixelGrid::split_edge(boost::polygon::segment_data<int> e,
+                                  boost::polygon::segment_data<int>* out_1,
+                                  boost::polygon::segment_data<int>* out_2)
+{
+    boost::polygon::point_data<int> pt1(e.low().x(), e.low().y());
+    boost::polygon::point_data<int> pt2(e.high().x(), e.high().y());
+    boost::polygon::point_data<int> mid_pt((pt1.x() + pt2.x()) / 2, (pt1.y() + pt2.y()) / 2);
+
+    *out_1 = boost::polygon::segment_data<int>(pt1, mid_pt);
+    *out_2 = boost::polygon::segment_data<int>(mid_pt, pt2);
+}
+
 inline boost::polygon::segment_data<int> PixelGrid::reverse_edge(boost::polygon::segment_data<int> e)
 {
     return boost::polygon::segment_data<int>(e.high(), e.low());
 }
 
-void PixelGrid::remove_edge(boost::polygon::segment_data<int> e, int edge_num)
+void PixelGrid::remove_edge(boost::polygon::segment_data<int> e, int edge_idx)
 {
     // No need to actually remove edges from the neighbor_edges structure
     boost::polygon::point_data<int> pt1 = e.low();
     boost::polygon::point_data<int> pt2 = e.high();
 
-    this->neighbors[pt1.x() * this->img.cols + pt1.y()] &= ~(1 << edge_num);
-    this->neighbors[pt2.x() * this->img.cols + pt2.y()] &= ~(1 << MIRROR_EDGE(edge_num));
+    this->neighbors[pt1.x() * this->img.cols + pt1.y()] &= ~(IDX_TO_DIR(edge_idx));
+    this->neighbors[pt2.x() * this->img.cols + pt2.y()] &= ~(IDX_TO_DIR(MIRROR_EDGE(edge_idx)));
+}
+
+uint32_t PixelGrid::get_components(uint32_t *components)
+{
+    bool *seen = new bool[this->img.rows * this->img.cols]();
+    uint32_t component_num = 0;
+
+    for (int r = 0; r < this->img.rows; r++) {
+        for (int c = 0; c < this->img.cols; c++) {
+            int pos = r * this->img.cols + c;
+            if (!seen[pos]) {
+                std::queue<int> q;
+                q.push(pos);
+                components[pos] = component_num;
+                seen[pos] = true;
+
+                while (!q.empty()) {
+                    int cur_pos = q.front();
+                    q.pop();
+
+                    uint8_t bitmask = this->neighbors[cur_pos];
+                    for (int i = 0; i < NUM_DIRS; i++) {
+                        if (bitmask & IDX_TO_DIR(i)) {
+                            int new_pos = cur_pos + (DIRECTIONS[i][0] * this->img.cols + DIRECTIONS[i][1]);
+
+                            if (!seen[new_pos]) {
+                                components[new_pos] = component_num;
+                                seen[new_pos] = true;
+                                q.push(new_pos);
+                            }
+                        }
+                    }
+                }
+
+                component_num++;
+            }
+        }
+    }
+
+    delete[] seen;
+    return component_num;
 }
 
 } /* Depixelize */
