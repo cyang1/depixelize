@@ -2,8 +2,18 @@
 #define DEPIXELIZE_COLOR_UTIL_HPP
 
 #include <cstdint>
+#include <opencv2/opencv.hpp>
 
 namespace Depixelize {
+
+inline cv::Vec3b yuv2rgb(const cv::Vec3b &yuv)
+{
+    // Hackity hack hack hack
+    cv::Mat M(1, 1, CV_8UC3, cv::Scalar::all(0));
+    M.at<cv::Vec3b>(0, 0) = yuv;
+    cv::cvtColor(M, M, CV_YCrCb2RGB);
+    return M.at<cv::Vec3b>(0, 0);
+}
 
 inline bool dissimilar_colors(const uint8_t yuv1[3], const uint8_t yuv2[3])
 {

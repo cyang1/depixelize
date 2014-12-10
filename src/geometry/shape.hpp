@@ -8,6 +8,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "geometry/point.hpp"
+#include "geometry/bspline.hpp"
 
 namespace Depixelize {
 
@@ -15,7 +16,7 @@ class ColorPoint
 {
 public:
 
-    ColorPoint(Point cen, cv::Vec3b c) : centroid(cen), color(c) { }
+    ColorPoint(const Point &cen, const cv::Vec3b &c) : centroid(cen), color(c) { }
     virtual ~ColorPoint() { }
 
     Point centroid;
@@ -26,18 +27,8 @@ class Shape
 {
 public:
 
-    Shape(const std::deque<Point> &edge, const std::vector<ColorPoint> &colors)
-        : edge(edge), colors(colors), area(0)
-    {
-        // All credits to http://alienryderflex.com/polygon_area/
-        uint32_t j = edge.size() - 1;
-        for (uint32_t i = 0; i < edge.size(); i++) {
-            this->area += (edge[j].x + edge[i].x) * (edge[j].y - edge[i].y);
-            j = i;
-        }
-
-        this->area = fabs(this->area * 0.5);
-    }
+    Shape(const BSpline &edge, const std::vector<ColorPoint> &colors, double area)
+        : edge(edge), colors(colors), area(area) { }
     virtual ~Shape() { }
 
     // Sorting functions
@@ -55,7 +46,7 @@ public:
         swap(a.area, b.area);
     }
 
-    std::deque<Point> edge;
+    BSpline edge;
     std::vector<ColorPoint> colors;
     double area;
 

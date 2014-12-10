@@ -87,6 +87,7 @@ private:
     const std::vector<cv::Vec3b> colors;
 
     Path* component_paths;
+    BSpline* component_splines;
     std::vector<Point> all_points;
     std::unordered_map<Point, uint32_t> point_map;
 };

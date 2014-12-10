@@ -167,7 +167,7 @@ int PixelGrid::get_data(std::vector< boost::polygon::point_data<int> >* points,
             uint8_t cur_bitmask = this->neighbors[r * this->img.cols + c];
             if (cur_bitmask == 0) {
                 points->push_back(boost::polygon::point_data<int>(2 * c, 2 * r));
-                pt_colors.push_back(this->img.at<cv::Vec3b>(c, r));
+                pt_colors.push_back(this->img.at<cv::Vec3b>(r, c));
                 pt_components.push_back(img_components[r * this->img.cols + c]);
                 continue;
             }
@@ -185,7 +185,7 @@ int PixelGrid::get_data(std::vector< boost::polygon::point_data<int> >* points,
 
                     edges->push_back(e1);
                     edges->push_back(e2);
-                    edge_colors.push_back(this->img.at<cv::Vec3b>(c, r));
+                    edge_colors.push_back(this->img.at<cv::Vec3b>(r, c));
                     edge_colors.push_back(this->img.at<cv::Vec3b>(next_r, next_c));
                     edge_components.push_back(img_components[r * this->img.cols + c]);
                     edge_components.push_back(img_components[next_r * this->img.cols + next_c]);

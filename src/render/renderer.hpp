@@ -21,7 +21,7 @@ public:
     virtual std::string get_extension() const = 0;
     virtual void render(const std::string &filename, const std::vector<Shape> &shapes) const = 0;
 
-private:
+protected:
 
     int input_width, input_height;
     double output_scale;

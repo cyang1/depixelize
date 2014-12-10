@@ -86,60 +86,116 @@ void SplineOptimizer::initialize()
         }
     }
 
-    int hist[] = { 0, 0, 0, 0, 0, 0 };
-    for (uint32_t i = 0; i < this->all_points.size(); i++) {
-        hist[adjacent_edges.count(i) - 1]++;
-    }
-    std::cout << "Number of edges with given valences" << std::endl;
-    for (int i = 0; i < 6; i++) {
-        std::cout << i + 1 << ": " << hist[i] << std::endl;
-    }
+    // int hist[] = { 0, 0, 0, 0, 0, 0 };
+    // for (uint32_t i = 0; i < this->all_points.size(); i++) {
+    //     hist[adjacent_edges.count(i) - 1]++;
+    // }
+    // std::cout << "Number of edges with given valences" << std::endl;
+    // for (int i = 0; i < 6; i++) {
+    //     std::cout << i + 1 << ": " << hist[i] << std::endl;
+    // }
 
-    cv::Mat im1 = cv::Mat::zeros(39 * 20, 49 * 20, CV_8UC3);
-    for (uint32_t i = 0; i < this->all_points.size(); i++) {
-        auto range = adjacent_edges.equal_range(i);
-        for_each(
-            range.first,
-            range.second,
-            [&](std::unordered_multimap<uint32_t, EdgeRef>::value_type &p){
-                Point pt1 = this->all_points[p.second.idx1];
-                Point pt2 = this->all_points[p.second.idx2];
-                cv::line(im1, cv::Point(10 * pt1.x, 10 * pt1.y), cv::Point(10 * pt2.x, 10 * pt2.y), cv::Scalar(0, 0, 255), 1, 8);
-            }
-        );
-    }
-    cv::imshow("Image", im1);
-    cv::waitKey(0);
+    // cv::Mat im1 = cv::Mat::zeros(39 * 20, 49 * 20, CV_8UC3);
+    // for (uint32_t i = 0; i < this->all_points.size(); i++) {
+    //     auto range = adjacent_edges.equal_range(i);
+    //     for_each(
+    //         range.first,
+    //         range.second,
+    //         [&](std::unordered_multimap<uint32_t, EdgeRef>::value_type &p){
+    //             Point pt1 = this->all_points[p.second.idx1];
+    //             Point pt2 = this->all_points[p.second.idx2];
+    //             cv::line(im1, cv::Point(10 * pt1.x, 10 * pt1.y), cv::Point(10 * pt2.x, 10 * pt2.y), cv::Scalar(0, 0, 255), 1, 8);
+    //         }
+    //     );
+    // }
+    // cv::imshow("Image", im1);
+    // cv::waitKey(0);
 
     this->component_paths = new Path[this->num_components]();
+    this->component_splines = new BSpline[this->num_components];
 
     for (uint32_t i = 0; i < this->num_components; i++) {
         join_edges(&this->component_paths[i], component_edges[i], adjacent_edges);
-    }
 
-    cv::Mat im2 = cv::Mat::zeros(39 * 20, 49 * 20, CV_8UC3);
-    for (uint32_t i = 0; i < this->num_components; i++) {
-        Path &cur_path = this->component_paths[i];
-
-        for (uint32_t j = 0; j < cur_path.size(); j++) {
-            PointRef prev_ptref = j == 0 ? cur_path.back() : cur_path[j - 1];
-            PointRef cur_ptref = cur_path[j];
-            Point pt1 = this->all_points[prev_ptref.idx];
-            Point pt2 = this->all_points[cur_ptref.idx];
-
-            cv::line(im2, cv::Point(10 * pt1.x, 10 * pt1.y), cv::Point(10 * pt2.x, 10 * pt2.y), cv::Scalar(255.0 * i / this->num_components, 255, 192), 1, 8);
+        std::vector<Point*> ptr_path;
+        for (auto &p : this->component_paths[i]) {
+            ptr_path.push_back(&this->all_points[p.idx]);
         }
+        this->component_splines[i] = BSpline(ptr_path);
     }
-    cv::cvtColor(im2, im2, CV_HSV2BGR);
-    cv::imshow("Image", im2);
-    cv::waitKey(0);
+
+    // cv::Mat im2 = cv::Mat::zeros(39 * 20, 49 * 20, CV_8UC3);
+    // for (uint32_t i = 0; i < this->num_components; i++) {
+    //     Path &cur_path = this->component_paths[i];
+
+    //     for (uint32_t j = 0; j < cur_path.size(); j++) {
+    //         PointRef prev_ptref = j == 0 ? cur_path.back() : cur_path[j - 1];
+    //         PointRef cur_ptref = cur_path[j];
+    //         Point pt1 = this->all_points[prev_ptref.idx];
+    //         Point pt2 = this->all_points[cur_ptref.idx];
+
+    //         cv::line(im2, cv::Point(10 * pt1.x, 10 * pt1.y), cv::Point(10 * pt2.x, 10 * pt2.y), cv::Scalar(255.0 * i / this->num_components, 255, 192), 1, 8);
+    //     }
+    // }
+    // cv::cvtColor(im2, im2, CV_HSV2BGR);
+    // cv::imshow("Image", im2);
+    // cv::waitKey(0);
 
     delete[] component_edges;
 }
 
+static inline double positional_energy(Point guess, Point initial)
+{
+    using std::pow;
+    return pow(pow(guess.x - initial.x, 2) + pow(guess.y - initial.y, 2), 2);
+}
+
 void SplineOptimizer::optimize_splines()
 {
+    const uint32_t NUM_ITERATIONS = 8;
+    const uint32_t GUESSES_PER_ITERATION = 16;
+    const double RADIUS = 0.125;
 
+    std::vector<Point> original_points(all_points.begin(), all_points.end());
+
+    for (uint32_t n1 = 0; n1 < NUM_ITERATIONS; n1++) {
+        for (uint32_t i = 0; i < this->num_components; i++) {
+            Path &cur_path = this->component_paths[i];
+            BSpline &cur_spline = this->component_splines[i];
+            int path_len = cur_path.size();
+            std::vector<int> indices;
+            for (int j = 0; j < path_len; j++) {
+                indices.push_back(j);
+            }
+            std::random_shuffle(indices.begin(), indices.end());
+
+            for (int &idx : indices) {
+                if (!cur_path[idx].can_optimize) {
+                    continue;
+                }
+                for (uint32_t n2 = 0; n2 < GUESSES_PER_ITERATION; n2++) {
+                    Point saved_old_pt = this->all_points[cur_path[idx].idx];
+                    Point &old_pt = this->all_points[cur_path[idx].idx];
+                    double orig_p_energy = positional_energy(old_pt, original_points[cur_path[idx].idx]);
+                    double orig_s_energy = cur_spline.curvature_energy(idx);
+                    double orig_energy = orig_p_energy + orig_s_energy;
+
+                    Point r = random_point(RADIUS);
+                    old_pt.x += r.x;
+                    old_pt.y += r.y;
+
+                    double p_energy = positional_energy(old_pt, original_points[cur_path[idx].idx]);
+                    double s_energy = cur_spline.curvature_energy(idx);
+                    double energy = p_energy + s_energy;
+
+                    if (energy >= orig_energy) {
+                        old_pt.x = saved_old_pt.x;
+                        old_pt.y = saved_old_pt.y;
+                    }
+                }
+            }
+        }
+    }
 }
 
 std::vector<Shape> SplineOptimizer::make_shapes()
@@ -172,16 +228,28 @@ std::vector<Shape> SplineOptimizer::make_shapes()
             edge = edge->next();
         } while (edge != it->incident_edge());
 
+        centroid.x /= num_points;
+        centroid.y /= num_points;
+
+        uint64_t idx = it->source_index();
+        component_colors[this->components[idx]].push_back({ centroid, this->colors[idx] });
     }
 
     std::vector<Shape> ret;
     for (uint32_t i = 0; i < this->num_components; i++) {
-        std::deque<Point> actual_path;
-        for (auto &p : this->component_paths[i]) {
-            actual_path.push_back(this->all_points[p.idx]);
+        // All credits to http://alienryderflex.com/polygon_area/
+        double area = 0;
+        Path edge = this->component_paths[i];
+        uint32_t k = edge.size() - 1;
+        for (uint32_t j = 0; j < edge.size(); j++) {
+            Point prev_pt = this->all_points[edge[k].idx];
+            Point next_pt = this->all_points[edge[j].idx];
+            area += (prev_pt.x + next_pt.x) * (prev_pt.y - next_pt.y);
+            k = j;
         }
+        area = fabs(area * 0.5);
 
-        ret.push_back(Shape(actual_path, component_colors[i]));
+        ret.push_back(Shape(this->component_splines[i], component_colors[i], area));
     }
 
     delete[] component_colors;
@@ -228,13 +296,18 @@ void SplineOptimizer::join_edges(Path *path, const std::vector<EdgeRef> &edges,
     // in the path is
     auto last_range = adj_list.equal_range(path->back().idx);
     EdgeRef last_edge;
+    bool found = false;
     for (auto it = last_range.first; it != last_range.second; ++it) {
         if (it->second.idx2 == path->front().idx) {
             last_edge = it->second;
+            found = true;
             break;
         }
     }
-    path->front().can_optimize = should_optimize(last_edge, edges[0], adjacent_edges);
+    // This should always be true...hopefully
+    if (found) {
+        path->front().can_optimize = should_optimize(last_edge, edges[0], adjacent_edges);
+    }
 }
 
 // Invariant: e1.idx2 == e2.idx1

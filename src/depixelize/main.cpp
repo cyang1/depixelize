@@ -22,7 +22,7 @@ struct Options
     // not allocated, pointed it to something static
     const char* input_filename;
     // not allocated, pointed it to something static
-    const char* output_filename;
+    char* output_filename;
     // output file scale (defaults to 4)
     int output_scale;
 };
@@ -35,7 +35,7 @@ static void print_usage(const char* progname)
     printf("Usage: %s [options] input_filename\n", progname);
     printf("Program Options:\n");
     printf("  -o  --output <FILENAME>    Puts the resulting image into <FILENAME> (default: [input_filename]_out)\n");
-    printf("  -s  --scale  <INT>         Scale the original image by this factor (default: 4)\n");
+    printf("  -s  --scale  <INT>         Scale the original image by this factor (default: 16)\n");
     printf("  -h  --help                 This message\n");
 }
 
@@ -51,7 +51,7 @@ static bool parse_args(Options* options, int argc, char* argv[])
 
     options->input_filename = NULL;
     options->output_filename = NULL;
-    options->output_scale = 4;
+    options->output_scale = 16;
 
     // parse commandline options ////////////////////////////////////////////
     int opt;
@@ -89,7 +89,8 @@ static bool parse_args(Options* options, int argc, char* argv[])
     if (options->output_filename == NULL) {
         boost::filesystem::path filename = boost::filesystem::path(options->input_filename).stem();
         filename += "_out";
-        options->output_filename = filename.c_str();
+        options->output_filename = new char[filename.native().length() + 1];
+        std::strcpy(options->output_filename, filename.c_str());
     }
 
     return true;

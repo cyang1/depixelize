@@ -24,6 +24,26 @@ public:
         return this->x < other.x || (this->x == other.x && this->y < other.y);
     }
 
+    Point operator+(const Point &other) const
+    {
+        return Point(this->x + other.x, this->y + other.y);
+    }
+
+    Point operator-(const Point &other) const
+    {
+        return Point(this->x - other.x, this->y - other.y);
+    }
+
+    Point operator*(double m) const
+    {
+        return Point(this->x * m, this->y * m);
+    }
+
+    Point operator/(double m) const
+    {
+        return Point(this->x / m, this->y / m);
+    }
+
     double x, y;
     // Spline *owner;
 };
