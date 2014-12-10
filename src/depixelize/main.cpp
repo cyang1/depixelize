@@ -35,8 +35,9 @@ static void print_usage(const char* progname)
     printf("Usage: %s [options] input_filename\n", progname);
     printf("Program Options:\n");
     printf("  -o  --output <FILENAME>    Puts the resulting image into <FILENAME> (default: [input_filename]_out)\n");
-    printf("  -s  --scale  <INT>         Scale the original image by this factor (default: 16)\n");
+    printf("  -s  --scale  <INT>         Scale the output image by this factor (default: 16)\n");
     printf("  -h  --help                 This message\n");
+    printf("  input_filename             The input image to depixelize\n");
 }
 
 /**

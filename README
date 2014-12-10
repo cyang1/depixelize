@@ -9,19 +9,23 @@ This project is a C++ implementation of Depixelizing Pixel Art, by Kopf and
 Lischinski, SIGGRAPH 2011, written for my final project in CMU's 15-463,
 Computational Photography.
 
-What follows is instructions on building the code, running the program, and a
-description of the source files.
+This code has only been tested on the files in the images/ directory, it is
+likely to contain bugs. Also, the optimization phase does not appear to
+work correctly (output does not match paper's results).
+
+What follows is instructions on building the code, running the program, and
+a description of the source files.
 
 This README and the CMake build system for this project were largely adapted
-from projects in 15-462, Computer Graphics.
+from projects in CMU's 15-462, Computer Graphics.
 
 ---------------------------------------------------------------------------
 Prerequisites
 ---------------------------------------------------------------------------
 
 There are some libraries required for this to compile, namely OpenCV (for
-image reading/writing and colorspace conversion), Boost (for the Voronoi
-diagram), and libNURB (for non-uniform rational b-splines).
+image reading/writing and colorspace conversion) and Boost (for the Voronoi
+diagram and filesystem utilities).
 
 ---------------------------------------------------------------------------
 Building the Code
@@ -57,17 +61,16 @@ likely not run on Windows as the proper runtime libraries are not included.
 Running the Program
 ---------------------------------------------------------------------------
 
-depixelize [-s scale] [-o output_file] input_file
-
-Options:
-
-    -s scale
-        The factor to scale the input image by. Defaults to 4.
-    -o output_file
-        The output file in which to write the scaled images.
-        If not specified, default timestamped filenames are used.
-    input_file:
-        The input image to depixelize.
+./depixelize [options] input_filename
+Program Options:
+  -o  --output <FILENAME>
+      Puts the resulting image into <FILENAME> (default: [input_filename]_out)
+  -s  --scale  <INT>
+      Scale the output image by this factor (default: 16)
+  -h  --help
+      This message
+  input_filename
+      The input image to depixelize
 
 ---------------------------------------------------------------------------
 Source Files and Directory Structure
@@ -76,16 +79,40 @@ Source Files and Directory Structure
 A description of the top-level directories and all source/header file pairs
 follows.
 
-README              -- this file
+README                   -- this file
 
-images/             -- a set of input images from the original paper
-                        (C) Nintendo Co., Ltd
+images/                  -- a set of input images from the original paper
+                             (C) Nintendo Co., Ltd
 
-src/build/*         == Build system stuff.
-    CMakeLists.txt  -- Compiler flags can be adjusted by editing the list in
-                        here.
+src/build/*              == Build system stuff.
+    CMakeLists.txt       -- Compiler flags can be adjusted by editing the
+                              list in here.
 
-src/depixelize/     == Project-specific files.
-    main            -- Main function, and application backend.
-    pixel_grid      -- An implementation of an 8-connected pixel grid that can
-                        make itself planar and resolve ambiguities.
+src/depixelize/          == Project-specific files.
+    main                 -- Main function, and application backend.
+    pixel_grid           -- An implementation of an 8-connected pixel grid
+                              that can make itself planar and resolve
+                              ambiguities.
+    spline_optimizer     -- Extracts and optimizes splines from the Voronoi
+                              diagram.
+    color_util           -- Various color utility functions.
+    math_util            -- Various math utility functions.
+    voronoi_visual_utils -- Voronoi utilities, borrowed from the
+                              voronoi_visualizer example in Boost.
+
+src/geometry/            == Geometry related classes and functions
+    bspline              -- Contains a B-spline implementation that can
+                              find its own curvature and be integrated.
+    edge                 -- Simple undirected-edge made from 2 points.
+    point                -- Simple point implementation, with some math
+                              utility operators implemented.
+    shape                -- A shape, defined by a B-spline edge and a list
+                              of internal color points.
+    types                -- Various common types.
+
+src/render/              == Rendering related classes
+    renderer             -- Base interface for all renderers. Defines
+                              rendering lists of shapes to arbitrary
+                              formats.
+    svg_renderer         -- SVG implementation of the renderer.
+    simple_svg_1.0.0     -- An SVG rendering library from the Internets.
