@@ -62,7 +62,7 @@ void PixelGrid::initialize(const cv::Mat img)
     if (img.rows == 1) {
         std::fill(this->neighbors, this->neighbors + img.cols, 0x11); // 0b00010001, no top or bottom neighbors
     } else {
-        std::fill(this->neighbors, this->neighbors + img.cols, 0x8F); // 0b00011111, no top neighbors
+        std::fill(this->neighbors, this->neighbors + img.cols, 0x1F); // 0b00011111, no top neighbors
         std::fill(this->neighbors + (img.rows - 1) * img.cols, this->neighbors + img.rows * img.cols, 0xF1); // 0b11110001, no bottom neighbors
     }
     for (int i = 0; i < img.rows; i++) {
