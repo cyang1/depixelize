@@ -325,7 +325,7 @@ bool SplineOptimizer::should_optimize(EdgeRef e1, EdgeRef e2,
         return false;
     }
 
-    EdgeRef last_edge;
+    EdgeRef last_edge = { 0, 0, false };
     auto range = adjacent_edges.equal_range(common_pt);
     for (auto it = range.first; it != range.second; ++it) {
         if (it->second != e1 && it->second != e2) {
