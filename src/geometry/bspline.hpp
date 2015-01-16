@@ -124,9 +124,6 @@ public:
 
         double num = d1.x * d2.y - d1.y * d2.x;
         double den = pow(d1.x * d1.x + d1.y * d1.y, 3 / 2.0);
-        if (den == 0) {
-            return 0;
-        }
 
         for (auto &p : deriv1.points) {
             delete p;
@@ -134,7 +131,11 @@ public:
         for (auto &p : deriv2.points) {
             delete p;
         }
-        return fabs(num / den);
+
+        double q = num / den;
+        return (std::isinf(q) || std::isnan(q))
+            ? 0
+            : fabs(q);
     }
 
     double integrate_span(std::function<double(double)> f, const Point &span) const

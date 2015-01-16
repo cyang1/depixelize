@@ -1,6 +1,9 @@
 #ifndef DEPIXELIZE_POINT_HPP
 #define DEPIXELIZE_POINT_HPP
 
+#include <cmath>
+#include <limits>
+
 #include <boost/polygon/voronoi.hpp>
 
 #include "geometry/types.hpp"
@@ -16,12 +19,18 @@ public:
     virtual ~Point() { }
     bool operator==(const Point &other) const
     {
-        return this->x == other.x && this->y == other.y;
+        return
+          fabs(this->x - other.x) < std::numeric_limits<double>::epsilon() &&
+          fabs(this->y - other.y) < std::numeric_limits<double>::epsilon();
     }
 
     bool operator<(const Point &other) const
     {
-        return this->x < other.x || (this->x == other.x && this->y < other.y);
+        return
+          this->x < other.x || (
+            fabs(this->x - other.x) < std::numeric_limits<double>::epsilon() &&
+            this->y < other.y
+          );
     }
 
     Point operator+(const Point &other) const
